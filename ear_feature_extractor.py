@@ -4,17 +4,18 @@ import math
 from matplotlib import pyplot as plt
 
 def imgSegment(img):
-    crop = img[1:119, 1:90]
+    rows,cols=img.shape[0:2]
+    crop = img[1:rows-10, 1:cols]
     height, width = crop.shape[:2]
     blur = cv2.GaussianBlur(crop,(5,5),0)
-    edges = cv2.Canny(blur,30,170)
+    edges = cv2.Canny(blur,70,170)
     return edges
 
 def UmaxFind(edges):
     Umaxflag =False
     rows,cols = edges.shape
-    print("엣지: y   x")
-    print(rows,cols)
+    #print("엣지: y   x")
+    #print(rows,cols)
     for y in range(rows):
         for x in range(cols):
             if Umaxflag==False:
@@ -23,7 +24,14 @@ def UmaxFind(edges):
                     Umaxflag=True
                     Umax = (y,x) # Umax 행,열 좌표
                     return Umax
-
+def checkFeature(edges,Ulb,Umax,Urb,Llb,Lmax,Cmax,Ilb):
+    rows,cols=edges.shape
+    for y in range(rows):
+        for x in range(cols):
+            l=(y,x)
+            if l==Ulb or l==Umax or l==Urb or l==Llb or l==Lmax or l==Cmax or l==Ilb :
+                edges[y,x]=100
+    return edges
 def DrawOrigin(img):
     crop = img[1:119, 1:90]
     height, width = crop.shape[:2]
@@ -62,12 +70,12 @@ def LmaxFind(edges,Umax):
     rows,cols=edges.shape
     max_length=0
     Lmax=(0,0)
-    for i in range(rows):
-        for j in range(cols):
-            k=edges[i,j]
+    for y in range(rows):
+        for x in range(cols):
+            k=edges[y,x]
             if k==255:
-                if max_length<Euclidean1(Umax,i,j): #Umax와 엣지 좌표간의 거리
-                    Lmax=(i,j)
+                if max_length<Euclidean1(Umax,x,y): #Umax와 엣지 좌표간의 거리
+                    Lmax=(y,x)
             else :
                 pass
     return Lmax
@@ -81,7 +89,7 @@ def UlbFind(edges,Umax,T):
         for y in range(rows):
             k=edges[y,x]
             dist=Euclidean1(Umax,x,y)
-            if Ulbflag==False and T< dist and dist<(T+1) and k==255:
+            if Ulbflag==False and (T-1)< dist and dist<(T+1) and k==255:
                 Ulbflag=True
                 Ulb = (y,x) # Umax 행(y),열(x) 좌표
                 return Ulb
@@ -96,7 +104,7 @@ def UrbFind(edges,Umax,T):
         for y in range(rows):
             k=edges[y,cols-x-1]
             dist=Euclidean1(Umax,cols-x-1,y)
-            if Urbflag==False and T< dist and dist<(T+1) and k==255:
+            if Urbflag==False and (T-1)< dist and dist<(T+1) and k==255:
                 Urbflag=True
                 Urb=(y,cols-x-1)
                 return Urb
@@ -116,15 +124,13 @@ def LlbFind(edges,Lmax,T):
             k=edges[rows-y-1,x]
             dist=Euclidean1(Lmax,x,rows-y-1)
             Llb_and_leftList=[]
-            if Llbflag==False and T< dist and dist<(T+1) and k==255:
+            if Llbflag==False and (T-1)< dist and dist<(T+1) and k==255:
                 Llbflag=True
                 Llb=(rows-y-1,x)
                 Llb_and_leftList.append(Llb)
                 Llb_and_leftList.append(leftlist)
                 return Llb_and_leftList
             elif k==255:
-                leftlocy=y
-                leftlocx=x
                 leftloc=(y,x)
                 leftlist.append(leftloc)
                 break
@@ -138,7 +144,7 @@ def FV2Find(edges,Ulb,Umax,Urb,Llb,Lmax):
     #Llb의 y좌표 : Ly1, Lmax의 y좌표 : Ly2, Llb의 x좌표 : Lx1, Lmax의 x좌표 : Lx2
     Ly1,Ly2,Lx1,Lx2= Llb[0],Lmax[0],Llb[1],Lmax[1]
     #print(Ly1,Ly2,Lx1,Lx2)
-
+    
     #Ux,Uy로 이루어진 upper영역에 존재하는 점(외곽선)들과 Lx,Ly로 이루어진 lower영역안에 존재하는 점(외곽선)들 사이의 최단거리를 FV2로 한다.
     Ulist=[]        #upper영역에 존재하는 외곽선 좌표들
     Llist=[]        #lower영역에 존재하는 외곽선 좌표들
@@ -179,53 +185,62 @@ def CmaxFind(Umax,Lmax):
 
 def ClFind(leftlist,Cmax):  # 왼쪽 나선영역 외곽선과 Cmax간의 최단거리 Cl
     min_length=1000000
+    Ilb=(0,0)
+    Cl_Ilb=[]
     for i in leftlist:
         dist=Euclidean2(i,Cmax)
+        y=i[0]
+        x=i[1]
         if dist<min_length:
             min_length=dist
-    return min_length
-def main():
-    img = cv2.imread('./image/0015.jpg')
+            Ilb=(y,x)
+    Cl_Ilb.append(min_length)
+    Cl_Ilb.append(Ilb)
+    return Cl_Ilb
+
+def extract_feature(path,label,T):  # 이미지 경로 : path / 레이블 : label / 피쳐 추출할 T 포인트(임의의 수 대략 10~ 20정도) : T
+    img = cv2.imread(path)
     edges=imgSegment(img)
     Umax=UmaxFind(edges)            # Umax = 귀의 제일 상단점
     Lmax=LmaxFind(edges,Umax)   # Lmax = Umax와 가장 멀리 떨어진 귀의 외곽선 중 좌표점 / Umax와 Lmax간의 거리 : FV1
-    print("Umax: y    x")
-    print("     ",Umax)
-    print("Lmax: y    x")
-    print("     ",Lmax)
-    
-    T = 10
+    #    print("Umax: y    x")
+    #    print("     ",Umax)
+    #    print("Lmax: y    x")
+    #    print("     ",Lmax)
+    #
     Ulb = UlbFind(edges,Umax,T)     # Ulb = T에서 T+1 사이의 값(거리)만큼 떨어진 Umax왼쪽에 위치한 외곽선중 한점
-    print("Ulb:  y    x")
-    print("     ",Ulb)
+    #    print("Ulb:  y    x")
+    #    print("     ",Ulb)
     Urb = UrbFind(edges,Umax,T)     # Urb = T에서 T+1 사이의 값(거리)만큼 떨어진 Umax오른쪽에 위치한 외곽선중 한점
-    print("Urb:  y    x")
-    print("     ",Urb)
+    #    print("Urb:  y    x")
+    #    print("     ",Urb)
     
     Llb_and_leftList = LlbFind(edges,Lmax,T)
     Llb=Llb_and_leftList[0]         # Llb = T에서 T+1 사이의 값(거리)만큼 떨어진 Lmax왼쪽에 위치한 외곽선중 한점
     leftlist=Llb_and_leftList[1]  #왼쪽 나선영역 외곽선 좌표점 리스트
-    print("Llb:  y    x")
-    print("     ",Llb)
+    #    print("Llb:  y    x")
+    #    print("     ",Llb)
     FV1=Euclidean2(Umax,Lmax)
     result=FV2Find(edges,Ulb,Umax,Urb,Llb,Lmax)
     Umin=result[0]
     Lmin=result[1]
     FV2=result[2]
-    print("FV1(Umax와 Lmax의 직선거리) :",FV1)
-    print("FV2(Ulb와 Urb사이영역과 Llb와 Lmax사이영역 간 최단 직선 거리) :",FV2)
+    #    print("FV1(Umax와 Lmax의 직선거리) :",FV1)
+    #    print("FV2(Ulb와 Urb사이영역과 Llb와 Lmax사이영역 간 최단 직선 거리) :",FV2)
     FV3=FV1+FV2
     FV4=FV2/FV1
-    print("FV3(FV1+FV2) : ",FV3)
-    print("FV4(FV2/FV1) : ",FV4)
+    #    print("FV3(FV1+FV2) : ",FV3)
+    #    print("FV4(FV2/FV1) : ",FV4)
     Cmax=CmaxFind(Umax,Lmax)     #Umax와 Cmax를 잇는 선분의 중점
-    print("Cmax : ",Cmax)
-    Cl=ClFind(leftlist,Cmax)
-    print("Cl : ",Cl)
+    #    print("Cmax : ",Cmax)
+    Cl_Ilb=ClFind(leftlist,Cmax)
+    Cl = Cl_Ilb[0]
+    Ilb = Cl_Ilb[1]
+    #    print("Cl : ",Cl)
     FV5=Cl/FV1
     FV6=Cl/FV2
-    print("FV5(Cl/FV1) : ",FV5)
-    print("FV6(Cl/FV2) : ",FV6)
+    #    print("FV5(Cl/FV1) : ",FV5)
+    #    print("FV6(Cl/FV2) : ",FV6)
     FV=[]
     FV.append(FV1)
     FV.append(FV2)
@@ -233,8 +248,40 @@ def main():
     FV.append(FV4)
     FV.append(FV5)
     FV.append(FV6)
-    print(FV)
-    DrawOrigin(img)
+    FV.append(label)
+    drawedge=checkFeature(edges,Ulb,Umax,Urb,Llb,Lmax,Cmax,Ilb)
+    Draw(drawedge)
+    #    DrawOrigin(img)
+    return FV
+
+def main() :
+    img_num = 35
+    label = 3
+    T = 20 # Umax와 Lmax에서 T만큼 떨어진 외곽선 Ulb,Urb,Llb를 정하는 임의의 수
+    for i in range(3,img_num+1):
+        image_path = "./image/%04d.jpg"%i
+        print(image_path)
+        FV=extract_feature(image_path,label,T)
+        feature = ','.join(str(v) for v in FV)
+        print(feature)
 
 
 main()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
